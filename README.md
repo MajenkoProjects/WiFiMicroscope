@@ -28,3 +28,4 @@ There are a few keys bound to specific operations:
 * ' : Decrease contrast
 * # : Increase contrast
 * r : Reset brightness and contrast to default
+* s : Save a JPEG snapshot to the current directory named `microscope_<time>.jpg`

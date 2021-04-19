@@ -1,2 +1,4 @@
 microscope
 microscope.o
+*.jpg
+*.py

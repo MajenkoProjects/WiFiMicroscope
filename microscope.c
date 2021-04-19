@@ -135,6 +135,12 @@ void *displayImage(void *none) {
                                 contrast = 1.0;
                                 brightness = 0;
                                 break;
+                            case 's': {
+                                char filename[50];
+                                snprintf(filename, 50, "microscope_%lu.jpg", time(NULL));
+                                IMG_SaveJPG(windowSurface, filename, 75);
+                                printf("Saved snapshot to %s\n", filename);
+                            }
                         }
                     }
                     break;
