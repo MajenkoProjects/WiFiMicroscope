@@ -131,6 +131,10 @@ void *displayImage(void *none) {
                                 contrast -= 0.1;
                                 if (contrast < 0.1) contrast = 0.1;
                                 break;
+                            case 'r':
+                                contrast = 1.0;
+                                brightness = 0;
+                                break;
                         }
                     }
                     break;

@@ -27,3 +27,4 @@ There are a few keys bound to specific operations:
 * ] : Increase brightness
 * ' : Decrease contrast
 * # : Increase contrast
+* r : Reset brightness and contrast to default
