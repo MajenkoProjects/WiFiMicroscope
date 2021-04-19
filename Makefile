@@ -6,3 +6,9 @@ LIBS=-lSDL2 -lSDL2_image
 
 $(BIN): $(OBJS)
 	$(CC) $(LDFLAGS) -o $@ $< $(LIBS)
+
+install: $(BIN)
+	install -m 755 $(BIN) /usr/bin
+
+clean:
+	rm -f $(BIN) $(OBJS)
