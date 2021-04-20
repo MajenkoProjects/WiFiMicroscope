@@ -11,6 +11,8 @@
 #include <SDL2/SDL_image.h>
 #include <pthread.h>
 
+#include "testcard.h"
+
 int udpSocket;
 struct sockaddr_in serverAddr;
 struct sockaddr_in cameraAddr;
@@ -22,6 +24,7 @@ uint8_t imageFrame[1310720];
 int imageFrameSize = 0;
 int imageReady = 0;
 int running = 1;
+int online = 0;
 
 int brightness = 0;
 float contrast = 1.0;
@@ -63,28 +66,67 @@ void *receiveFromCamera(void *none) {
     sendto(udpSocket, "JHCMD\xd0\x01", 7, 0, (struct sockaddr *)&cameraAddr, sizeof(cameraAddr));
     sendto(udpSocket, "JHCMD\xd0\x01", 7, 0, (struct sockaddr *)&cameraAddr, sizeof(cameraAddr));
 
+    int olcount = 0;
+
     while (running) {
-        int nBytes = recvfrom(udpSocket, buffer, sizeof(buffer), 0, NULL, NULL);
 
-        if (nBytes > 8) {
-            frameno = buffer[0] | (buffer[1] << 8);
-            packetno = buffer[3];
+        fd_set rfd;
+        fd_set efd;
+        fd_set wfd;
 
-            if (packetno == 0) {
-                if (framepos > 0) {
-                    memcpy(imageFrame, receivingFrame, framepos);
-                    imageFrameSize = framepos;
-                    imageReady = 1;
+        struct timeval to;
+
+        FD_ZERO(&rfd);
+        FD_ZERO(&efd);
+        FD_ZERO(&wfd);
+
+        FD_SET(udpSocket, &rfd);
+        //FD_SET(udpSocket, &efd);
+        //FD_SET(udpSocket, &wfd);
+
+        to.tv_sec = 1;
+        to.tv_usec = 0;
+
+        int t = select(udpSocket + 1, &rfd, &wfd, &efd, &to);
+
+        printf("%d\n", t);
+
+        if (t > 0) {
+            int nBytes = recvfrom(udpSocket, buffer, sizeof(buffer), 0, NULL, NULL);
+
+            if (nBytes > 8) {
+                online = 1;
+                olcount = 0;
+                frameno = buffer[0] | (buffer[1] << 8);
+                packetno = buffer[3];
+
+                if (packetno == 0) {
+                    if (framepos > 0) {
+                        memcpy(imageFrame, receivingFrame, framepos);
+                        imageFrameSize = framepos;
+                        imageReady = 1;
+                    }
+                    framepos = 0;
+
+                    if (frameno % 50 == 0) {
+                        sendto(udpSocket, "JHCMD\xd0\x01", 7, 0, (struct sockaddr *)&cameraAddr, sizeof(cameraAddr));
+                    }
                 }
-                framepos = 0;
 
-                if (frameno % 50 == 0) {
-                    sendto(udpSocket, "JHCMD\xd0\x01", 7, 0, (struct sockaddr *)&cameraAddr, sizeof(cameraAddr));
-                }
+                memcpy(receivingFrame + framepos, buffer + 8, nBytes - 8);
+                framepos += (nBytes - 8);
             }
-
-            memcpy(receivingFrame + framepos, buffer + 8, nBytes - 8);
-            framepos += (nBytes - 8);
+        } else {
+            online = 0;
+            olcount++;
+            if (olcount > 10) {
+                printf("Pinging device...\n");
+                olcount = 0;
+                sendto(udpSocket, "JHCMD\x10\x00", 7, 0, (struct sockaddr *)&cameraAddr, sizeof(cameraAddr));
+                sendto(udpSocket, "JHCMD\x20\x00", 7, 0, (struct sockaddr *)&cameraAddr, sizeof(cameraAddr));
+                sendto(udpSocket, "JHCMD\xd0\x01", 7, 0, (struct sockaddr *)&cameraAddr, sizeof(cameraAddr));
+                sendto(udpSocket, "JHCMD\xd0\x01", 7, 0, (struct sockaddr *)&cameraAddr, sizeof(cameraAddr));
+            }
         }
     }
     sendto(udpSocket, "JHCMD\xd0\x01", 7, 0, (struct sockaddr *)&cameraAddr, sizeof(cameraAddr));
@@ -117,11 +159,11 @@ void *displayImage(void *none) {
                                 break;
                             case ']':
                                 brightness++;
-                                if (brightness > 127) brightness = 127;
+                                if (brightness > 255) brightness = 255;
                                 break;
                             case '[':
                                 brightness--;
-                                if (brightness < -127) brightness = -127;
+                                if (brightness < -255) brightness = -255;
                                 break;
                             case '#':
                                 contrast += 0.1;
@@ -147,65 +189,74 @@ void *displayImage(void *none) {
             }
         }
 
-        if (imageReady == 1) {
-            imageReady = 0;
-//            SDL_Delay(10);
+        if (online) {
+            if (imageReady == 1) {
 
-            SDL_RWops *jpg = SDL_RWFromMem(imageFrame, imageFrameSize);
-            SDL_Surface *image = IMG_LoadJPG_RW(jpg);
-            SDL_RWclose(jpg);
-            if (image) {
-                uint8_t *pixels = (uint8_t *)(image->pixels);
+                SDL_RWops *jpg = SDL_RWFromMem(imageFrame, imageFrameSize);
+                SDL_Surface *image = IMG_LoadJPG_RW(jpg);
+                SDL_RWclose(jpg);
+                if (image) {
+                    uint8_t *pixels = (uint8_t *)(image->pixels);
 
-                SDL_LockSurface(image);
+                    SDL_LockSurface(image);
 
-                for (i = 0; i < (1280 * 720 * 3); i += 3) {
-                    int r = pixels[i];
-                    int g = pixels[i + 1];
-                    int b = pixels[i + 2];
+                    for (i = 0; i < (1280 * 720 * 3); i += 3) {
+                        int r = pixels[i];
+                        int g = pixels[i + 1];
+                        int b = pixels[i + 2];
 
-                    if (mono) {
-                        float lum = 0.299 * r + 0.587 * g + 0.114 * b;
-                        int l = lum;
-                        if (l > 255) l = 255;
-                        r = g = b = lum;
+                        if (mono) {
+                            float lum = 0.299 * r + 0.587 * g + 0.114 * b;
+                            int l = lum;
+                            if (l > 255) l = 255;
+                            r = g = b = lum;
+                        }
+
+                        if (invert) {
+                            r = 255 - r;
+                            g = 255 - g;
+                            b = 255 - b;
+                        }
+
+                        r += brightness;
+                        g += brightness;
+                        b += brightness;
+
+                        r *= contrast;
+                        g *= contrast;
+                        b *= contrast;
+                
+                        if (r > 255) r = 255;
+                        if (g > 255) g = 255;
+                        if (b > 255) b = 255;
+
+                        if (r < 0) r = 0;
+                        if (g < 0) g = 0;
+                        if (b < 0) b = 0;
+
+                        pixels[i] = r;
+                        pixels[i + 1] = g;
+                        pixels[i + 2] = b;
                     }
 
-                    if (invert) {
-                        r = 255 - r;
-                        g = 255 - g;
-                        b = 255 - b;
-                    }
+                    SDL_UnlockSurface(image);
 
-                    r += brightness;
-                    g += brightness;
-                    b += brightness;
-
-                    r *= contrast;
-                    g *= contrast;
-                    b *= contrast;
-            
-                    if (r > 255) r = 255;
-                    if (g > 255) g = 255;
-                    if (b > 255) b = 255;
-
-                    if (r < 0) r = 0;
-                    if (g < 0) g = 0;
-                    if (b < 0) b = 0;
-
-                    pixels[i] = r;
-                    pixels[i + 1] = g;
-                    pixels[i + 2] = b;
+                    SDL_BlitSurface(image, NULL, windowSurface, NULL);
+                    SDL_FreeSurface(image);
+                    SDL_UpdateWindowSurface(window);
                 }
-
-                SDL_UnlockSurface(image);
-
-                SDL_BlitSurface(image, NULL, windowSurface, NULL);
-                SDL_FreeSurface(image);
-                SDL_UpdateWindowSurface(window);
+                imageReady = 0;
+            } else {
+                SDL_Delay(30);
             }
         } else {
-            SDL_Delay(10);
+            SDL_RWops *jpg = SDL_RWFromMem(testcard, testcard_len);
+            SDL_Surface *image = IMG_LoadJPG_RW(jpg);
+            SDL_RWclose(jpg);
+            SDL_BlitSurface(image, NULL, windowSurface, NULL);
+            SDL_FreeSurface(image);
+            SDL_UpdateWindowSurface(window);
+            SDL_Delay(30);
         }
     }
 
