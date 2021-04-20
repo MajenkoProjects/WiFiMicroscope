@@ -20,12 +20,12 @@ Interaction
 
 There are a few keys bound to specific operations:
 
-* q : Quit
-* m : Toggle monochrome mode
-* i : Toggle invert colour mode
-* [ : Decrease brightness
-* ] : Increase brightness
-* ' : Decrease contrast
-* # : Increase contrast
-* r : Reset brightness and contrast to default
-* s : Save a JPEG snapshot to the current directory named `microscope_<time>.jpg`
+* `q` : Quit
+* `m` : Toggle monochrome mode
+* `i` : Toggle invert colour mode
+* `[` : Decrease brightness
+* `]` : Increase brightness
+* `'` : Decrease contrast
+* `#` : Increase contrast
+* `r` : Reset brightness and contrast to default
+* `s` : Save a JPEG snapshot to the current directory named `microscope_<time>.jpg`
