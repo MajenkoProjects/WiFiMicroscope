@@ -89,8 +89,6 @@ void *receiveFromCamera(void *none) {
 
         int t = select(udpSocket + 1, &rfd, &wfd, &efd, &to);
 
-        printf("%d\n", t);
-
         if (t > 0) {
             int nBytes = recvfrom(udpSocket, buffer, sizeof(buffer), 0, NULL, NULL);
 
