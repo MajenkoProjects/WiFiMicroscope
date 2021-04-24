@@ -29,3 +29,10 @@ There are a few keys bound to specific operations:
 * `#` : Increase contrast
 * `r` : Reset brightness and contrast to default
 * `s` : Save a JPEG snapshot to the current directory named `microscope_<time>.jpg`
+
+V4L2
+====
+
+This software now supports V4L2Loopback for the video output. Specify `-d /dev/videoX` on the command line
+and the video signal will be fed to that virtual V4L2 device for piping into your favourite video software
+(such as OBS). 
