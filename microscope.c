@@ -10,6 +10,9 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
 #include <pthread.h>
+#include <linux/videodev2.h>
+#include <fcntl.h>
+#include <sys/ioctl.h>
 
 #include "testcard.h"
 
@@ -32,6 +35,8 @@ float contrast = 1.0;
 SDL_Window *window;
 SDL_Surface *windowSurface;
 SDL_Event event;
+
+char *video = NULL;
 
 void *receiveFromCamera(void *none) {
     uint8_t receivingFrame[1310720];
@@ -265,27 +270,137 @@ void *displayImage(void *none) {
 
 
 int main(int argc, char **argv) {
-    pthread_attr_t attr;
-    SDL_Init(SDL_INIT_VIDEO);
-    IMG_Init(IMG_INIT_JPG);
-    window = SDL_CreateWindow("WiFi Microscope",
-        SDL_WINDOWPOS_UNDEFINED,
-        SDL_WINDOWPOS_UNDEFINED,
-        1280,
-        720,
-        SDL_WINDOW_SHOWN
-    );
+    int opt;
 
-    windowSurface = SDL_GetWindowSurface(window);
-    
-    atexit(SDL_Quit);
+    while ((opt = getopt(argc, argv, "d:hv")) != -1) {
+        switch (opt) {
+            case 'v':
+                printf("WiFi Microscope Receiver V1.0\n(c) 2021 Majenko Technologies\n");
+                break;
+            case 'd':
+                video = optarg;
+                break;
+            case 'h':
+                printf("Usage: microscope [-hv] [-d /dev/videoX]\n");
+                printf("     h: Show this help message\n");
+                printf("     v: Show the version and copyright information\n");
+                printf("     d: Send the video to the specified v4l2loopback device\n");
+                return 0;
+                break;
+        }
+    }
+
+
+
+
+    pthread_attr_t attr;
     pthread_attr_init(&attr);
     pthread_create(&cameraThread, &attr, &receiveFromCamera, NULL);
 
-    displayImage(NULL);
+
+    if (video != NULL) {
+        if (access(video, R_OK | W_OK) != 0) {
+            fprintf(stderr, "Error: Unable to access %s\n", video);
+            return 10;
+        }
+        printf("Sending video to %s\n", video);
+
+        int fd = open(video, O_RDWR);
+        if (!fd) {
+            fprintf(stderr, "Error: Unable to access %s: %s\n", video, strerror(errno));
+            return 10;
+        }
+
+        struct v4l2_capability vid_caps;
+        struct v4l2_format vid_format;
+
+        IMG_Init(IMG_INIT_JPG);
+
+        int rv = ioctl(fd, VIDIOC_QUERYCAP, &vid_caps);
+        if (rv < 0) {
+            fprintf(stderr, "Error: Unable to probe video device: %s\n", strerror(errno));
+            return 10;
+        }
+
+        memset(&vid_format, 0, sizeof(vid_format));
+
+        vid_format.type = V4L2_BUF_TYPE_VIDEO_OUTPUT;
+        vid_format.fmt.pix.width = 1280;
+        vid_format.fmt.pix.height = 720;
+        vid_format.fmt.pix.sizeimage = 1280 * 720 * 3;
+        vid_format.fmt.pix.pixelformat = v4l2_fourcc('R','G','B','3');
+        vid_format.fmt.pix.field = V4L2_FIELD_NONE;
+        vid_format.fmt.pix.bytesperline = 1280 * 3;
+        vid_format.fmt.pix.colorspace = V4L2_COLORSPACE_SRGB;
+
+        rv = ioctl(fd, VIDIOC_S_FMT, &vid_format);
+        if (rv < 0) {
+            fprintf(stderr, "Error: Unable to set correct video mode: %s\n", strerror(errno));
+            return 10;
+        }
+
+        
+        while (running == 1) {
+            if (online) {
+                if (imageReady == 1) {
+                    SDL_RWops *jpg = SDL_RWFromMem(imageFrame, imageFrameSize);
+                    SDL_Surface *image = IMG_LoadJPG_RW(jpg);
+                    SDL_RWclose(jpg);
+                    SDL_LockSurface(image);
+                    uint8_t *pixels = (uint8_t *)image->pixels;
+
+                    if (write(fd, pixels, vid_format.fmt.pix.sizeimage) < 0) {
+                        fprintf(stderr, "Error: Unable to write %d bytes to video device: %s\n", vid_format.fmt.pix.sizeimage, strerror(errno));
+                        close(fd);
+                        return 10;
+                    }
+                    SDL_UnlockSurface(image);
+                    SDL_FreeSurface(image);
+                    imageReady = 0;
+                } else {
+                    SDL_Delay(30);
+                }
+            } else {
+                SDL_RWops *jpg = SDL_RWFromMem(testcard, testcard_len);
+                SDL_Surface *image = IMG_LoadJPG_RW(jpg);
+                SDL_RWclose(jpg);
+                SDL_LockSurface(image);
+                uint8_t *pixels = (uint8_t *)image->pixels;
+
+                if (write(fd, pixels, vid_format.fmt.pix.sizeimage) < 0) {
+                    fprintf(stderr, "Error: Unable to write %d bytes to video device: %s\n", vid_format.fmt.pix.sizeimage, strerror(errno));
+                    close(fd);
+                    return 10;
+                }
+                SDL_UnlockSurface(image);
+                SDL_FreeSurface(image);
+                sleep(1);
+            }
+        }
+        close(fd);
+            
+
+    } else {
+        SDL_Init(SDL_INIT_VIDEO);
+        IMG_Init(IMG_INIT_JPG);
+        window = SDL_CreateWindow("WiFi Microscope",
+            SDL_WINDOWPOS_UNDEFINED,
+            SDL_WINDOWPOS_UNDEFINED,
+            1280,
+            720,
+            SDL_WINDOW_SHOWN
+        );
+
+        windowSurface = SDL_GetWindowSurface(window);
+        
+        atexit(SDL_Quit);
+
+        displayImage(NULL);
+
+    }
+
 
     pthread_join(cameraThread, NULL);
-
     return 0;
 
 }
