@@ -38,6 +38,8 @@ SDL_Event event;
 
 char *video = NULL;
 
+uint32_t ip;
+
 void *receiveFromCamera(void *none) {
     uint8_t receivingFrame[1310720];
     uint8_t buffer[1450];
@@ -58,7 +60,7 @@ void *receiveFromCamera(void *none) {
 
     cameraAddr.sin_family = AF_INET;
     cameraAddr.sin_port = htons(20000);
-    cameraAddr.sin_addr.s_addr = inet_addr("192.168.29.1");
+    cameraAddr.sin_addr.s_addr = ip;
     memset(cameraAddr.sin_zero, '\0', sizeof(cameraAddr.sin_zero));
 
     if (bind(udpSocket, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) != 0) {
@@ -72,6 +74,7 @@ void *receiveFromCamera(void *none) {
     sendto(udpSocket, "JHCMD\xd0\x01", 7, 0, (struct sockaddr *)&cameraAddr, sizeof(cameraAddr));
 
     int olcount = 0;
+        int lastPacket = -1;
 
     while (running) {
 
@@ -94,6 +97,7 @@ void *receiveFromCamera(void *none) {
 
         int t = select(udpSocket + 1, &rfd, &wfd, &efd, &to);
 
+
         if (t > 0) {
             int nBytes = recvfrom(udpSocket, buffer, sizeof(buffer), 0, NULL, NULL);
 
@@ -114,7 +118,10 @@ void *receiveFromCamera(void *none) {
                     if (frameno % 50 == 0) {
                         sendto(udpSocket, "JHCMD\xd0\x01", 7, 0, (struct sockaddr *)&cameraAddr, sizeof(cameraAddr));
                     }
+                } else if (packetno != (lastPacket + 1)) {
+                    printf("Dropped packet detected!\n");
                 }
+                lastPacket = packetno;
 
                 memcpy(receivingFrame + framepos, buffer + 8, nBytes - 8);
                 framepos += (nBytes - 8);
@@ -272,7 +279,9 @@ void *displayImage(void *none) {
 int main(int argc, char **argv) {
     int opt;
 
-    while ((opt = getopt(argc, argv, "d:hv")) != -1) {
+    ip = inet_addr("192.168.29.1");
+
+    while ((opt = getopt(argc, argv, "d:hvi:")) != -1) {
         switch (opt) {
             case 'v':
                 printf("WiFi Microscope Receiver V1.0\n(c) 2021 Majenko Technologies\n");
@@ -280,11 +289,15 @@ int main(int argc, char **argv) {
             case 'd':
                 video = optarg;
                 break;
+            case 'i':
+                ip = inet_addr(optarg);
+                break;
             case 'h':
-                printf("Usage: microscope [-hv] [-d /dev/videoX]\n");
+                printf("Usage: microscope [-hv] [-d /dev/videoX] [-i ip]\n");
                 printf("     h: Show this help message\n");
                 printf("     v: Show the version and copyright information\n");
                 printf("     d: Send the video to the specified v4l2loopback device\n");
+                printf("     i: Connect to different IP address instead of the standard 192.168.29.1\n");
                 return 0;
                 break;
         }
@@ -358,7 +371,7 @@ int main(int argc, char **argv) {
                     SDL_FreeSurface(image);
                     imageReady = 0;
                 } else {
-                    SDL_Delay(30);
+                    SDL_Delay(3);
                 }
             } else {
                 SDL_RWops *jpg = SDL_RWFromMem(testcard, testcard_len);
