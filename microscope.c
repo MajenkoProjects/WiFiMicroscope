@@ -22,7 +22,11 @@ struct sockaddr_in cameraAddr;
 
 pthread_t cameraThread;
 
-uint8_t imageFrame[1310720];
+uint8_t *imageFrameA;
+uint8_t *imageFrameB;
+
+uint8_t *receivingFrame;
+uint8_t *displayingFrame;
 
 int imageFrameSize = 0;
 int imageReady = 0;
@@ -41,7 +45,6 @@ char *video = NULL;
 uint32_t ip;
 
 void *receiveFromCamera(void *none) {
-    uint8_t receivingFrame[1310720];
     uint8_t buffer[1450];
     int framepos = 0;
     int frameno = 0;
@@ -74,7 +77,7 @@ void *receiveFromCamera(void *none) {
     sendto(udpSocket, "JHCMD\xd0\x01", 7, 0, (struct sockaddr *)&cameraAddr, sizeof(cameraAddr));
 
     int olcount = 0;
-        int lastPacket = -1;
+    int lastPacket = -1;
 
     while (running) {
 
@@ -97,7 +100,6 @@ void *receiveFromCamera(void *none) {
 
         int t = select(udpSocket + 1, &rfd, &wfd, &efd, &to);
 
-
         if (t > 0) {
             int nBytes = recvfrom(udpSocket, buffer, sizeof(buffer), 0, NULL, NULL);
 
@@ -109,7 +111,13 @@ void *receiveFromCamera(void *none) {
 
                 if (packetno == 0) {
                     if (framepos > 0) {
-                        memcpy(imageFrame, receivingFrame, framepos);
+                        if (displayingFrame == imageFrameA) {
+                            displayingFrame = (uint8_t *)imageFrameB;
+                            receivingFrame = (uint8_t *)imageFrameA;
+                        } else {
+                            displayingFrame = (uint8_t *)imageFrameA;
+                            receivingFrame = (uint8_t *)imageFrameB;
+                        }
                         imageFrameSize = framepos;
                         imageReady = 1;
                     }
@@ -202,7 +210,7 @@ void *displayImage(void *none) {
         if (online) {
             if (imageReady == 1) {
 
-                SDL_RWops *jpg = SDL_RWFromMem(imageFrame, imageFrameSize);
+                SDL_RWops *jpg = SDL_RWFromMem(displayingFrame, imageFrameSize);
                 SDL_Surface *image = IMG_LoadJPG_RW(jpg);
                 SDL_RWclose(jpg);
                 if (image) {
@@ -278,6 +286,12 @@ void *displayImage(void *none) {
 
 int main(int argc, char **argv) {
     int opt;
+
+    imageFrameA = (uint8_t *)malloc(1310920);
+    imageFrameB = (uint8_t *)malloc(1310920);
+
+    receivingFrame = imageFrameA;
+    displayingFrame = imageFrameB;
 
     ip = inet_addr("192.168.29.1");
 
@@ -356,7 +370,7 @@ int main(int argc, char **argv) {
         while (running == 1) {
             if (online) {
                 if (imageReady == 1) {
-                    SDL_RWops *jpg = SDL_RWFromMem(imageFrame, imageFrameSize);
+                    SDL_RWops *jpg = SDL_RWFromMem(displayingFrame, imageFrameSize);
                     SDL_Surface *image = IMG_LoadJPG_RW(jpg);
                     SDL_RWclose(jpg);
                     SDL_LockSurface(image);
@@ -414,6 +428,8 @@ int main(int argc, char **argv) {
 
 
     pthread_join(cameraThread, NULL);
+    free(imageFrameA);
+    free(imageFrameB);
     return 0;
 
 }
