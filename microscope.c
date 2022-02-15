@@ -298,7 +298,7 @@ int main(int argc, char **argv) {
     while ((opt = getopt(argc, argv, "d:hvi:")) != -1) {
         switch (opt) {
             case 'v':
-                printf("WiFi Microscope Receiver V1.0\n(c) 2021 Majenko Technologies\n");
+                printf("WiFi Microscope Receiver V1.1\n(c) 2021 Majenko Technologies\n");
                 break;
             case 'd':
                 video = optarg;
