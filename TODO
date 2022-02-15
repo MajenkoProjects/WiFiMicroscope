@@ -1,0 +1,2 @@
+* Convert to autotools for better detection of SDL et al.
+* Add on-screen display for contrast, brightness, etc
